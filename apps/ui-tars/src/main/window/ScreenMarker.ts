@@ -196,7 +196,7 @@ class ScreenMarker {
 
     // 监听来自渲染进程的点击事件
     ipcMain.once('pause-button-clicked', async () => {
-      await server.stopRun();
+      await server.stopRun({});
     });
   }
 

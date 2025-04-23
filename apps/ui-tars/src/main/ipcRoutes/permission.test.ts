@@ -40,7 +40,7 @@ describe('permissionRoute.getEnsurePermissions', () => {
 
     await expect(
       permissionRoute.getEnsurePermissions.handle({
-        input: undefined,
+        input: {},
         context: {} as any,
       }),
     ).rejects.toThrow('Failed to check system permissions');
@@ -59,7 +59,7 @@ describe('permissionRoute.getEnsurePermissions', () => {
 
     await expect(
       permissionRoute.getEnsurePermissions.handle({
-        input: undefined,
+        input: {},
         context: {} as any,
       }),
     ).rejects.toThrow('Failed to update store state');
@@ -78,7 +78,7 @@ describe('permissionRoute.getEnsurePermissions', () => {
 
     await expect(
       permissionRoute.getEnsurePermissions.handle({
-        input: undefined,
+        input: {},
         context: {} as any,
       }),
     ).rejects.toThrow('Failed to get store state');
@@ -96,7 +96,7 @@ describe('permissionRoute.getEnsurePermissions', () => {
     });
 
     const result = await permissionRoute.getEnsurePermissions.handle({
-      input: undefined,
+      input: {},
       context: {} as any,
     });
 

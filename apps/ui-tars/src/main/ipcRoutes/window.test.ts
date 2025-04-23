@@ -14,7 +14,7 @@ describe('windowRoute.showMainWindow', () => {
 
   it('should call showWindow function', async () => {
     await windowRoute.showMainWindow.handle({
-      input: undefined,
+      input: {},
       context: {} as any,
     });
 
@@ -24,15 +24,15 @@ describe('windowRoute.showMainWindow', () => {
 
   it('should handle showWindow being called multiple times', async () => {
     await windowRoute.showMainWindow.handle({
-      input: undefined,
+      input: {},
       context: {} as any,
     });
     await windowRoute.showMainWindow.handle({
-      input: undefined,
+      input: {},
       context: {} as any,
     });
     await windowRoute.showMainWindow.handle({
-      input: undefined,
+      input: {},
       context: {} as any,
     });
 
@@ -46,7 +46,7 @@ describe('windowRoute.showMainWindow', () => {
 
     await expect(
       windowRoute.showMainWindow.handle({
-        input: undefined,
+        input: {},
         context: {} as any,
       }),
     ).rejects.toThrow('Failed to show window');

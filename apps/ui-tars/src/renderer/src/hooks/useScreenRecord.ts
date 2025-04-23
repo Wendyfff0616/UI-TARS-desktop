@@ -7,6 +7,14 @@ import { setOfMarksOverlays } from '@main/shared/setOfMarks';
 import { getState } from './useStore';
 import { Conversation } from '@ui-tars/shared/types';
 import { api } from '@renderer/api';
+import { createClient } from '@ui-tars/electron-ipc/renderer';
+import type { Router } from '@/main/ipcRoutes';
+import { useSessionStore } from '@renderer/store/session';
+
+// 创建一个直接的IPC客户端用于获取屏幕尺寸
+const directIpcClient = createClient<Router>({
+  ipcInvoke: window.electron.ipcRenderer.invoke,
+});
 
 export const useScreenRecord = (
   watermarkText = `© ${new Date().getFullYear()} UI-TARS Desktop`,
@@ -64,8 +72,23 @@ export const useScreenRecord = (
     try {
       recordedChunksRef.current = [];
 
+      // 修改这里 - 使用直接客户端获取屏幕尺寸
+      // 1. 用api调用确保会话初始化（可选）
+      await api.getScreenSize({ type: 'main' });
+
+      // 2. 获取实际屏幕尺寸数据
+      const sessionId = useSessionStore.getState().currentServerSessionId || '';
+      const screenSizeResult = await directIpcClient.getScreenSize({
+        type: 'main',
+        sessionId,
+      } as any);
+
       const { screenWidth, screenHeight, scaleFactor } =
-        await api.getScreenSize();
+        screenSizeResult.data || {
+          screenWidth: 1920,
+          screenHeight: 1080,
+          scaleFactor: 1,
+        };
 
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: {

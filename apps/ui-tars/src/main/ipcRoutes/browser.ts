@@ -1,14 +1,16 @@
-/**
- * Copyright (c) 2025 Bytedance, Inc. and its affiliates.
- * SPDX-License-Identifier: Apache-2.0
- */
-import { initIpc } from '@ui-tars/electron-ipc/main';
+// apps/ui-tars/src/main/ipcRoutes/browser.ts
+import { t } from './_base';
 import { checkBrowserAvailability } from '../services/browserCheck';
-
-const t = initIpc.create();
+import { z } from 'zod';
 
 export const browserRoute = t.router({
-  checkBrowserAvailability: t.procedure.input<void>().handle(async () => {
-    return await checkBrowserAvailability();
-  }),
+  checkBrowserAvailability: t.procedure
+    // 自动注入 sessionId，不需要手写 SessionInput
+    .input(z.object({}))
+    .handle(async ({ input }) => {
+      const { sessionId } = input;
+      const available = await checkBrowserAvailability();
+      // 返回结果时把 newSessionId 带回前端
+      return { newSessionId: sessionId, data: available };
+    }),
 });

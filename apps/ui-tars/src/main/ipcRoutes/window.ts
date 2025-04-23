@@ -2,31 +2,48 @@
  * Copyright (c) 2025 Bytedance, Inc. and its affiliates.
  * SPDX-License-Identifier: Apache-2.0
  */
-import { initIpc } from '@ui-tars/electron-ipc/main';
+import { t } from './_base';
 import {
   LauncherWindow,
   closeSettingsWindow,
   createSettingsWindow,
   showWindow,
 } from '@main/window/index';
-
-const t = initIpc.create();
+import { z } from 'zod';
 
 export const windowRoute = t.router({
-  openSettingsWindow: t.procedure.input<void>().handle(async () => {
-    createSettingsWindow();
-  }),
-  closeSettingsWindow: t.procedure.input<void>().handle(async () => {
-    closeSettingsWindow();
-  }),
-  openLauncher: t.procedure.input<void>().handle(async () => {
+  openSettingsWindow: t.procedure
+    .input(z.object({}))
+    .handle(async ({ input }) => {
+      const { sessionId } = input;
+      createSettingsWindow();
+      return { newSessionId: sessionId };
+    }),
+
+  closeSettingsWindow: t.procedure
+    .input(z.object({}))
+    .handle(async ({ input }) => {
+      const { sessionId } = input;
+      closeSettingsWindow();
+      return { newSessionId: sessionId };
+    }),
+
+  openLauncher: t.procedure.input(z.object({})).handle(async ({ input }) => {
+    const { sessionId } = input;
     LauncherWindow.getInstance().show();
+    return { newSessionId: sessionId };
   }),
-  closeLauncher: t.procedure.input<void>().handle(async () => {
+
+  closeLauncher: t.procedure.input(z.object({})).handle(async ({ input }) => {
+    const { sessionId } = input;
     LauncherWindow.getInstance().blur();
     LauncherWindow.getInstance().hide();
+    return { newSessionId: sessionId };
   }),
-  showMainWindow: t.procedure.input<void>().handle(async () => {
+
+  showMainWindow: t.procedure.input(z.object({})).handle(async ({ input }) => {
+    const { sessionId } = input;
     showWindow();
+    return { newSessionId: sessionId };
   }),
 });

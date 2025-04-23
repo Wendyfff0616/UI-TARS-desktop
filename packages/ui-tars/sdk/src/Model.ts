@@ -2,14 +2,18 @@
  * Copyright (c) 2025 Bytedance, Inc. and its affiliates.
  * SPDX-License-Identifier: Apache-2.0
  */
-import OpenAI, { type ClientOptions } from 'openai';
+import OpenAI, {
+  type ClientOptions,
+  type OpenAI as OpenAIClient,
+} from 'openai';
 import {
   type ChatCompletionCreateParamsBase,
   type ChatCompletionMessageParam,
 } from 'openai/resources/chat/completions';
-import { actionParser } from '@ui-tars/action-parser';
+import * as json5 from 'json5';
 
 import { useContext } from './context/useContext';
+import type { AgentContext } from './types';
 import { Model, type InvokeParams, type InvokeOutput } from './types';
 
 import { preprocessResizeImage, convertToOpenAIMessages } from './utils';
@@ -48,25 +52,23 @@ export class UITarsModel extends Model {
    * call real LLM / VLM Model
    * @param params
    * @param options
-   * @returns
+   * @returns The full ChatCompletion object from OpenAI library
    */
   protected async invokeModelProvider(
     uiTarsVersion: UITarsModelVersion = UITarsModelVersion.V1_0,
     params: {
       messages: Array<ChatCompletionMessageParam>;
     },
-    options: {
+    options: OpenAIClient.RequestOptions & {
       signal?: AbortSignal;
     },
-  ): Promise<{
-    prediction: string;
-  }> {
+  ): Promise<OpenAIClient.ChatCompletion> {
     const { messages } = params;
     const {
       baseURL,
       apiKey,
       model,
-      max_tokens = uiTarsVersion == UITarsModelVersion.V1_5 ? 65535 : 1000,
+      max_tokens = uiTarsVersion === UITarsModelVersion.V1_5 ? 65535 : 1000,
       temperature = 0,
       top_p = 0.7,
       ...restOptions
@@ -79,6 +81,21 @@ export class UITarsModel extends Model {
       apiKey,
     });
 
+    // Log the request options being sent, especially headers
+    console.log(
+      '[UITarsModel.invokeModelProvider] Sending request with options:',
+      {
+        model,
+        messageCount: messages.length,
+        stream: false,
+        max_tokens,
+        temperature,
+        top_p,
+        headers: options.headers ? JSON.stringify(options.headers) : 'None',
+        signal: options.signal ? 'AbortSignal provided' : 'No AbortSignal',
+      },
+    );
+
     const result = await openai.chat.completions.create(
       {
         model,
@@ -88,7 +105,6 @@ export class UITarsModel extends Model {
         stop: null,
         frequency_penalty: null,
         presence_penalty: null,
-        // custom options
         max_tokens,
         temperature,
         top_p,
@@ -96,15 +112,19 @@ export class UITarsModel extends Model {
       options,
     );
 
-    return {
-      prediction: result.choices?.[0]?.message?.content ?? '',
-    };
+    return result;
   }
 
   async invoke(params: InvokeParams): Promise<InvokeOutput> {
-    const { conversations, images, screenContext, scaleFactor, uiTarsVersion } =
-      params;
-    const { logger, signal } = useContext();
+    const {
+      conversations,
+      images = [],
+      screenContext,
+      scaleFactor,
+      uiTarsVersion,
+      currentServerSessionId,
+    } = params;
+    const { logger, signal } = useContext<AgentContext>();
 
     logger?.info(
       `[UITarsModel] invoke: screenContext=${JSON.stringify(screenContext)}, scaleFactor=${scaleFactor}, uiTarsVersion=${uiTarsVersion}`,
@@ -121,57 +141,103 @@ export class UITarsModel extends Model {
       images.map((image) => preprocessResizeImage(image, maxPixels)),
     );
 
+    const currentServerId = currentServerSessionId;
+    logger?.info(
+      `[UITarsModel.invoke] Using current Server Session ID from params: ${currentServerId}`,
+    );
+
     const messages = convertToOpenAIMessages({
       conversations,
       images: compressedImages,
     });
 
-    const startTime = Date.now();
-    const result = await this.invokeModelProvider(
-      uiTarsVersion,
-      {
-        messages,
-      },
-      {
-        signal,
-      },
-    )
-      .catch((e) => {
-        logger?.error('[UITarsModel] error', e);
-        throw e;
-      })
-      .finally(() => {
-        logger?.info(`[UITarsModel cost]: ${Date.now() - startTime}ms`);
-      });
-
-    if (!result.prediction) {
-      const err = new Error();
-      err.name = 'vlm response error';
-      err.stack = JSON.stringify(result) ?? 'no message';
-      logger?.error(err);
-      throw err;
+    const requestOptions: OpenAIClient.RequestOptions = {};
+    if (signal) {
+      requestOptions.signal = signal;
     }
 
-    const { prediction } = result;
+    if (currentServerId) {
+      requestOptions.headers = { 'X-Session-ID': currentServerId };
+      logger?.info(
+        `[UITarsModel.invoke] Sending request WITH X-Session-ID: ${currentServerId}`,
+      );
+    } else {
+      logger?.info(
+        '[UITarsModel.invoke] Sending request WITHOUT X-Session-ID (first request).',
+      );
+    }
+
+    const startTime = Date.now();
+    let responseContent: string | null = null;
+    let parsedActions: any[] = [];
+    let receivedSessionId: string | null = null;
 
     try {
-      const { parsed: parsedPredictions } = await actionParser({
-        prediction,
-        factor: this.factors,
-        screenContext,
-        scaleFactor,
-        modelVer: uiTarsVersion,
-      });
-      return {
-        prediction,
-        parsedPredictions,
-      };
-    } catch (error) {
-      logger?.error('[UITarsModel] error', error);
-      return {
-        prediction,
-        parsedPredictions: [],
-      };
+      const completionResult = await this.invokeModelProvider(
+        uiTarsVersion,
+        { messages },
+        requestOptions as any,
+      );
+
+      logger?.info(`[UITarsModel cost]: ${Date.now() - startTime}ms`);
+
+      responseContent = completionResult.choices?.[0]?.message?.content ?? null;
+
+      if (!responseContent) {
+        const err = new Error('VLM response content is empty.');
+        err.name = 'vlm response error';
+        logger?.error(err);
+        throw err;
+      }
+
+      logger?.info(
+        `[UITarsModel.invoke] Attempting to parse prediction content as JSON...`,
+      );
+      try {
+        const parsedPayload = json5.parse(responseContent);
+
+        if (parsedPayload && typeof parsedPayload === 'object') {
+          receivedSessionId = parsedPayload.session_id || null;
+          logger?.info(
+            `[UITarsModel.invoke] Received session ID from payload: ${receivedSessionId}`,
+          );
+
+          parsedActions = Array.isArray(parsedPayload.actions)
+            ? parsedPayload.actions
+            : [];
+
+          if (!Array.isArray(parsedPayload.actions)) {
+            logger?.warn(
+              '[UITarsModel.invoke] Server response content payload did not contain a valid actions array.',
+            );
+          }
+        } else {
+          logger?.error(
+            '[UITarsModel.invoke] Parsed prediction content is not a valid object:',
+            parsedPayload,
+          );
+          parsedActions = [];
+        }
+      } catch (parseError: any) {
+        logger?.error(
+          '[UITarsModel.invoke] Failed to parse prediction content as JSON/JSON5:',
+          responseContent,
+          parseError,
+        );
+        parsedActions = [];
+      }
+    } catch (error: any) {
+      logger?.error(
+        '[UITarsModel.invoke] Error during model invocation:',
+        error,
+      );
+      throw error;
     }
+
+    return {
+      prediction: responseContent || '',
+      parsedPredictions: parsedActions,
+      serverSessionId: receivedSessionId,
+    };
   }
 }

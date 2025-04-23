@@ -31,7 +31,7 @@ export async function createTray() {
 
   // 点击处理函数
   const handleTrayClick = async () => {
-    await server.stopRun();
+    await server.stopRun({});
   };
 
   // 监听状态变化

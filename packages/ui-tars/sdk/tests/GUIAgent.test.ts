@@ -13,6 +13,9 @@ import { IMAGE_PLACEHOLDER } from '@ui-tars/shared/constants';
 import { UITarsModel } from '../src/Model';
 import { mockOpenAIResponse } from './testKits/index';
 import { DEFAULT_FACTORS } from '../src/constants';
+import type { OpenAI as OpenAIClient } from 'openai';
+import type { ChatCompletion } from 'openai/resources/chat/completions';
+import { UITarsModelVersion } from '@ui-tars/shared/types';
 
 const getContext = vi.fn();
 vi.mock('openai', () => ({
@@ -162,12 +165,35 @@ describe('GUIAgent', () => {
       constructor(modelConfig: { model: string }) {
         super(modelConfig);
       }
-      protected override async invokeModelProvider() {
+      protected override async invokeModelProvider(
+        _uiTarsVersion: UITarsModelVersion | undefined,
+        _params: { messages: OpenAIClient.ChatCompletionMessageParam[] },
+        _options: OpenAIClient.RequestOptions,
+      ): Promise<ChatCompletion> {
         getContextCustom(useContext());
 
-        return {
-          prediction: 'Thought: finished.\nAction: finished()',
+        const mockPrediction = 'Thought: finished.\nAction: finished()';
+        const mockPayload = {
+          session_id: 'mock-session-id',
+          actions: [{ type: 'finished', params: {} }],
         };
+        const contentString = JSON.stringify(mockPayload);
+
+        return {
+          id: 'chatcmpl-mock-custom-' + Math.random(),
+          object: 'chat.completion',
+          created: Date.now(),
+          model: this.modelConfig.model,
+          choices: [
+            {
+              index: 0,
+              message: { role: 'assistant', content: contentString },
+              finish_reason: 'stop',
+              logprobs: null,
+            },
+          ],
+          usage: { prompt_tokens: 5, completion_tokens: 5, total_tokens: 10 },
+        } as ChatCompletion;
       }
     }
 

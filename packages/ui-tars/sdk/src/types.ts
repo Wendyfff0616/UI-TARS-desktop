@@ -35,9 +35,9 @@ export interface ScreenshotOutput extends ScreenshotResult {}
 
 export interface InvokeParams {
   conversations: Message[];
-  images: string[];
+  images?: string[]; // base64 encoded images
   /** logical size */
-  screenContext: {
+  screenContext?: {
     /** screenshot width */
     width: number;
     /** screenshot height */
@@ -47,13 +47,17 @@ export interface InvokeParams {
   scaleFactor?: number;
   /** the ui-tars's version */
   uiTarsVersion?: UITarsModelVersion;
+  // Add the current server session ID from the caller (e.g., Zustand store)
+  currentServerSessionId?: string | null;
 }
 
 export interface InvokeOutput {
   prediction: string;
   parsedPredictions: PredictionParsed[];
-  // TODO: status: StatusEnum, status should be provided by model
+  /** The session ID received from the server in the response payload, if any. */
+  serverSessionId: string | null;
 }
+
 export abstract class Operator extends BaseOperator {
   static MANUAL: {
     ACTION_SPACES: string[];
