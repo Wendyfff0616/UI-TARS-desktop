@@ -8,11 +8,11 @@
  */
 import { EventEmitter } from 'node:events';
 import { v4 as uuidv4 } from 'uuid';
-import { type Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { type SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import {
   type StdioServerParameters,
-  type StdioClientTransport,
+  StdioClientTransport,
 } from '@modelcontextprotocol/sdk/client/stdio.js';
 import {
   type Tool,
@@ -22,9 +22,7 @@ import { z } from 'zod';
 import type {
   BuiltInMCPServer,
   MCPServer,
-  SSEMCPServer,
   StdioMCPServer,
-  StreamableHTTPMCPServer,
 } from '@agent-infra/mcp-shared/client';
 import {
   StreamableHTTPClientTransport,
@@ -51,9 +49,6 @@ export class MCPClient<
   private clients: {
     [key in ServerNames]?: Client;
   } = {};
-  private Client!: typeof Client;
-  private StdioTransport!: typeof StdioClientTransport;
-  private SSETransport!: typeof SSEClientTransport;
   private initialized = false;
   private initPromise: Promise<void> | null = null;
   private store: Map<string, any> = new Map();
@@ -72,10 +67,6 @@ export class MCPClient<
         status: s.status || 'activate',
       })),
     );
-
-    this.init().catch((err) => {
-      this.log('error', '[MCP] Failed to initialize MCP service:', err);
-    });
   }
 
   private log(level: 'info' | 'error' | 'warn' | 'debug', ...args: any[]) {
@@ -97,9 +88,6 @@ export class MCPClient<
     this.initPromise = (async () => {
       try {
         this.log('info', '[MCP] Starting initialization');
-        this.Client = await this.importClient();
-        this.StdioTransport = await this.importStdioClientTransport();
-        this.SSETransport = await this.importSSEClientTransport();
 
         this.initialized = true;
 
@@ -115,42 +103,6 @@ export class MCPClient<
     })();
 
     return this.initPromise;
-  }
-
-  private async importClient() {
-    try {
-      const { Client } = await import(
-        '@modelcontextprotocol/sdk/client/index.js'
-      );
-      return Client;
-    } catch (err) {
-      console.error('[MCP] Failed to import Client:', err);
-      throw err;
-    }
-  }
-
-  private async importStdioClientTransport() {
-    try {
-      const { StdioClientTransport } = await import(
-        '@modelcontextprotocol/sdk/client/stdio.js'
-      );
-      return StdioClientTransport;
-    } catch (err) {
-      console.error('[MCP] Failed to import Transport:', err);
-      throw err;
-    }
-  }
-
-  private async importSSEClientTransport() {
-    try {
-      const { SSEClientTransport } = await import(
-        '@modelcontextprotocol/sdk/client/sse.js'
-      );
-      return SSEClientTransport;
-    } catch (err) {
-      console.error('[MCP] Failed to import SSEClientTransport:', err);
-      throw err;
-    }
   }
 
   private async ensureInitialized() {
@@ -241,7 +193,7 @@ export class MCPClient<
         return;
       }
 
-      const client = new this.Client(
+      const client = new Client(
         {
           name: name,
           version: '1.0.0',
@@ -264,7 +216,7 @@ export class MCPClient<
             },
           } as StreamableHTTPClientTransportOptions);
         } else if (type === 'sse') {
-          transport = new this.SSETransport(new URL(url), {
+          transport = new SSEClientTransport(new URL(url), {
             eventSourceInit: {
               fetch: (url, init) => fetch(url, { ...init, headers }),
             },
@@ -299,7 +251,7 @@ export class MCPClient<
           env: mergedEnv as Record<string, string>,
           ...(cwd ? { cwd } : {}),
         };
-        transport = new this.StdioTransport(transportOpts);
+        transport = new StdioClientTransport(transportOpts);
       } else {
         throw new Error('No command or url provided for server');
       }
@@ -373,7 +325,7 @@ export class MCPClient<
         await this.activate(server);
       }
     } catch (error) {
-      console.error('Failed to add MCP server:', error);
+      this.log('error', `Failed to add MCP server: ${error}`);
       throw error;
     }
   }

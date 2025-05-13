@@ -169,9 +169,14 @@ export const useEnvConfig = create<{
   };
 });
 
+export interface EnhancedGroupedActionDump extends GroupedActionDump {
+  modelDetail: string;
+  systemPrompt: string;
+}
+
 export const useExecutionDump = create<{
-  dump: GroupedActionDump | null;
-  setGroupedDump: (dump: GroupedActionDump) => void;
+  dump: EnhancedGroupedActionDump | null;
+  setGroupedDump: (dump: EnhancedGroupedActionDump) => void;
   _executionDumpLoadId: number;
   startReplay: boolean;
   setStartReplay: (startReplay: boolean) => void;
@@ -250,7 +255,7 @@ export const useExecutionDump = create<{
     setStartReplay: (startReplay: boolean) => {
       set({ startReplay });
     },
-    setGroupedDump: (dump: GroupedActionDump) => {
+    setGroupedDump: (dump: EnhancedGroupedActionDump) => {
       console.log('will set ExecutionDump', dump);
       set({
         ...initData,
@@ -266,7 +271,11 @@ export const useExecutionDump = create<{
             dump.executions.length > 0 &&
             dump.executions[0].tasks.length > 0
           ) {
-            get().setActiveTask(dump.executions[0].tasks[0]);
+            if (dump.executions[0].tasks.length > 1) {
+              get().setActiveTask(dump.executions[0].tasks[1]);
+            } else {
+              get().setActiveTask(dump.executions[0].tasks[0]);
+            }
           }
         };
 

@@ -2,8 +2,16 @@
  * Copyright (c) 2025 Bytedance, Inc. and its affiliates.
  * SPDX-License-Identifier: Apache-2.0
  */
-import { AlertCircle, Camera, Loader2 } from 'lucide-react';
+import { useState } from 'react';
+import { AlertCircle, Camera, ChevronDown, Loader2 } from 'lucide-react';
+import { ErrorStatusEnum } from '@ui-tars/shared/types';
+
 import { Button } from '@renderer/components/ui/button';
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from '@renderer/components/ui/alert';
 
 export const HumanTextMessage = ({ text }: { text: string }) => {
   return (
@@ -26,15 +34,61 @@ export const ScreenshotMessage = ({ onClick }: ScreenshotMessageProps) => {
   );
 };
 
+const getError = (text: string) => {
+  let error: { message: string; stack: string };
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed && typeof parsed === 'object' && parsed.status) {
+      const errorStatus = ErrorStatusEnum[parsed.status] || 'Error';
+      error = {
+        message: `${errorStatus}: ${parsed.message}`,
+        stack: parsed.stack || text,
+      };
+    } else {
+      error = {
+        message: `Error: ${parsed.message || ''}`,
+        stack: parsed.stack || text,
+      };
+    }
+  } catch (e) {
+    error = {
+      message: 'Error:',
+      stack: text,
+    };
+  }
+
+  return error;
+};
+
 export const ErrorMessage = ({ text }: { text: string }) => {
+  const error = getError(text);
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  const MAX_LINE = 2;
+  const stackLines = error.stack.split('\n') || [];
+  const hasMoreLines = stackLines.length > MAX_LINE;
+  const displayedStack = isExpanded
+    ? error.stack
+    : stackLines.slice(0, MAX_LINE).join('\n');
+
   return (
-    <div className="flex flex-col gap-2 my-4 p-4 bg-red-500/10 border border-red-500/20 rounded-lg">
-      <div className="flex items-center gap-2">
-        <AlertCircle className="w-5 h-5 text-red-500 shrink-0" />
-        <span className="font-medium text-red-500">Error</span>
-      </div>
-      <div className="text-sm text-red-500/90 break-all">{text}</div>
-    </div>
+    <Alert variant="destructive" className="my-4 border-destructive/50">
+      <AlertCircle />
+      <AlertTitle className="break-all">{error.message}</AlertTitle>
+      <AlertDescription className="break-all whitespace-pre-wrap">
+        {displayedStack}
+        {hasMoreLines && (
+          <Button
+            variant="outline"
+            size="icon"
+            className="absolute right-2 bottom-2 w-7 h-7 cursor-pointer hover:bg-red-50 hover:text-red-500"
+            onClick={() => setIsExpanded(!isExpanded)}
+          >
+            <ChevronDown className={isExpanded ? 'rotate-180' : ''} />
+          </Button>
+        )}
+      </AlertDescription>
+    </Alert>
   );
 };
 

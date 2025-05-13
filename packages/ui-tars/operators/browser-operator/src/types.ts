@@ -2,14 +2,22 @@
  * Copyright (c) 2025 Bytedance, Inc. and its affiliates.
  * SPDX-License-Identifier: Apache-2.0
  */
-import { BrowserInterface, Page } from '@agent-infra/browser';
 import { Logger } from '@agent-infra/logger';
+import type { BrowserInterface, Page, BrowserType } from '@agent-infra/browser';
 import type { ScreenshotOutput, ExecuteParams } from '@ui-tars/sdk/core';
-import { StatusEnum } from '@ui-tars/sdk';
 
-export { Page, ScreenshotOutput, StatusEnum };
-export type { ExecuteParams };
+export { StatusEnum } from '@ui-tars/sdk';
+export type { Page, ScreenshotOutput, ExecuteParams };
 export type ParsedPrediction = ExecuteParams['parsedPrediction'];
+
+/**
+ * Search engine options
+ */
+export enum SearchEngine {
+  GOOGLE = 'google',
+  BAIDU = 'baidu',
+  BING = 'bing',
+}
 
 /**
  * Configuration options for the BrowserOperator
@@ -19,6 +27,8 @@ export interface BrowserOperatorOptions {
    * Browser instance to control
    */
   browser: BrowserInterface;
+
+  browserType: BrowserType;
 
   /**
    * Optional logger instance

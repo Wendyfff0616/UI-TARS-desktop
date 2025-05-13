@@ -2,9 +2,10 @@
  * Copyright (c) 2024-present Bytedance, Inc. and its affiliates.
  * SPDX-License-Identifier: MIT
  */
-import type { GroupedActionDump } from '@midscene/core';
+import { EnhancedGroupedActionDump } from './component/store';
 
-interface ExecutionDumpWithPlaywrightAttributes extends GroupedActionDump {
+interface ExecutionDumpWithPlaywrightAttributes
+  extends EnhancedGroupedActionDump {
   attributes: Record<string, any>;
 }
 
@@ -22,6 +23,8 @@ export function transformComputerUseDataToDump(
   return {
     groupName: data.instruction,
     groupDescription: '',
+    systemPrompt: data.systemPrompt,
+    modelDetail: data.modelDetail,
     executions: [
       {
         sdkVersion: data.version,
@@ -29,12 +32,13 @@ export function transformComputerUseDataToDump(
         logTime: data.logTime,
         name: data.instruction,
         tasks: data.conversations
-          .map((conv: any) => {
-            if (conv.from === 'human' && conv.value === '<image>') {
+          .map((conv: any, index: number) => {
+            if (conv.from === 'human') {
               return {
                 status: 'finished',
-                type: 'screenshot',
+                type: conv.value === '<image>' ? 'screenshot' : 'instruction',
                 timing: conv.timing,
+                value: conv.value,
                 pageContext: {
                   screenshotBase64: addBase64ImagePrefix(
                     conv.screenshotBase64 || '',
@@ -46,7 +50,8 @@ export function transformComputerUseDataToDump(
                 },
                 recorder: [
                   {
-                    type: 'screenshot',
+                    type:
+                      conv.value === '<image>' ? 'screenshot' : 'instruction',
                     ts: conv.timing.start,
                     screenshot: addBase64ImagePrefix(
                       conv.screenshotBase64 || '',
@@ -58,10 +63,19 @@ export function transformComputerUseDataToDump(
             }
 
             if (conv.from === 'gpt') {
+              const actions = conv.predictionParsed?.map((a: any) => {
+                return {
+                  type: a.action_type,
+                  input: JSON.stringify(a.action_inputs),
+                };
+              });
+
               return {
                 status: 'finished',
-                type: 'Action',
+                type: 'action',
                 timing: conv.timing,
+                value: conv.value,
+                actions: actions,
                 recorder: [
                   ...(conv.screenshotBase64
                     ? [

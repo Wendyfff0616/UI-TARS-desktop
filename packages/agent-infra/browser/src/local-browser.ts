@@ -3,9 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 import * as puppeteer from 'puppeteer-core';
-import { LaunchOptions } from './types';
 import { BrowserFinder } from './browser-finder';
 import { BaseBrowser } from './base-browser';
+
+import type { BrowserType, LaunchOptions } from './types';
 
 /**
  * LocalBrowser class for controlling locally installed browsers
@@ -13,12 +14,6 @@ import { BaseBrowser } from './base-browser';
  * @extends BaseBrowser
  */
 export class LocalBrowser extends BaseBrowser {
-  /**
-   * Browser finder instance to detect and locate installed browsers
-   * @private
-   */
-  private browserFinder = new BrowserFinder();
-
   /**
    * Launches a local browser instance with specified options
    * Automatically detects installed browsers if no executable path is provided
@@ -29,20 +24,20 @@ export class LocalBrowser extends BaseBrowser {
   async launch(options: LaunchOptions = {}): Promise<void> {
     this.logger.info('Launching browser with options:', options);
 
-    const executablePath =
-      options?.executablePath || this.browserFinder.findBrowser().executable;
-
-    this.logger.info('Using executable path:', executablePath);
-
+    const { path, type } = this.getBrowserInfo(options);
     const viewportWidth = options?.defaultViewport?.width ?? 1280;
     const viewportHeight = options?.defaultViewport?.height ?? 800;
 
     const puppeteerLaunchOptions: puppeteer.LaunchOptions = {
-      executablePath,
+      browser: type,
+      executablePath: path,
       headless: options?.headless ?? false,
       defaultViewport: {
         width: viewportWidth,
         height: viewportHeight,
+        // Setting this value to 0 will reset this value to the system default.
+        // This parameter combined with `captureBeyondViewport: false`, will resolve the screenshot blinking issue.
+        deviceScaleFactor: 0,
       },
       args: [
         '--no-sandbox',
@@ -66,7 +61,22 @@ export class LocalBrowser extends BaseBrowser {
         options?.profilePath
           ? `--profile-directory=${options.profilePath}`
           : '',
-      ].filter(Boolean),
+      ].filter((item) => {
+        if (type === 'firefox') {
+          // firefox not support rules
+          if (
+            item === '--disable-features=IsolateOrigins,site-per-process' ||
+            item === `--window-size=${viewportWidth},${viewportHeight + 90}`
+          ) {
+            return false;
+          }
+
+          return !!item;
+        }
+
+        // chrome/edge
+        return !!item;
+      }),
       ignoreDefaultArgs: ['--enable-automation'],
       timeout: options.timeout ?? 0,
       downloadBehavior: {
@@ -84,5 +94,44 @@ export class LocalBrowser extends BaseBrowser {
       this.logger.error('Failed to launch browser:', error);
       throw error;
     }
+  }
+
+  private getBrowserInfo(options: LaunchOptions = {}) {
+    // pptr only support 'chrome' and 'firefox'
+    const map: Record<BrowserType, Exclude<BrowserType, 'edge'>> = {
+      chrome: 'chrome',
+      edge: 'chrome',
+      firefox: 'firefox',
+    };
+
+    let browserPath = options.executablePath;
+    let browserType = options.browserType && map[options.browserType];
+
+    if (!browserPath) {
+      const browserInfo = new BrowserFinder(this.logger).findBrowser();
+      browserPath = browserInfo.path;
+      browserType = map[browserInfo.type];
+    } else {
+      if (!browserType) {
+        const lowercasePath = browserPath.toLowerCase();
+
+        if (lowercasePath.includes('chrome')) {
+          browserType = 'chrome';
+        } else if (lowercasePath.includes('edge')) {
+          browserType = 'chrome'; // pptr only support 'chrome' and 'firefox'
+        } else if (lowercasePath.includes('firefox')) {
+          browserType = 'firefox';
+        } else {
+          browserType = 'chrome';
+        }
+      }
+    }
+
+    this.logger.info('Using executable path:', browserPath);
+
+    return {
+      path: browserPath,
+      type: browserType,
+    };
   }
 }

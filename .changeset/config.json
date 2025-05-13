@@ -21,6 +21,8 @@
     "@agent-infra/*",
     "!@agent-infra/logger",
     "!@agent-infra/browser",
-    "!@agent-infra/shared"
+    "!@agent-infra/shared",
+    "!@agent-infra/mcp-client",
+    "!@agent-infra/mcp-shared"
   ]
 }

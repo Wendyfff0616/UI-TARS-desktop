@@ -3,46 +3,26 @@
  * Copyright (c) 2025 Bytedance, Inc. and its affiliates.
  * SPDX-License-Identifier: Apache-2.0
  */
-import type { BrowserInterface, Page } from '@agent-infra/browser';
 import { LocalBrowser } from '@agent-infra/browser';
 import { ConsoleLogger, Logger, defaultLogger } from '@agent-infra/logger';
 import { Operator, parseBoxToScreenCoords } from '@ui-tars/sdk/core';
+import type {
+  Page,
+  KeyInput,
+  BrowserType,
+  BrowserInterface,
+} from '@agent-infra/browser';
 import type {
   ScreenshotOutput,
   ExecuteParams,
   ExecuteOutput,
 } from '@ui-tars/sdk/core';
-import { BrowserOperatorOptions } from './types';
+import { BrowserOperatorOptions, SearchEngine } from './types';
 import { UIHelper } from './ui-helper';
 import { BrowserFinder } from '@agent-infra/browser';
 
-const KEY_MAPPINGS: Record<string, string> = {
-  enter: 'Enter',
-  tab: 'Tab',
-  escape: 'Escape',
-  up: 'ArrowUp',
-  down: 'ArrowDown',
-  left: 'ArrowLeft',
-  right: 'ArrowRight',
-  arrowup: 'ArrowUp',
-  arrowdown: 'ArrowDown',
-  arrowleft: 'ArrowLeft',
-  arrowright: 'ArrowRight',
-  backspace: 'Backspace',
-  delete: 'Delete',
-  f1: 'F1',
-  f2: 'F2',
-  f3: 'F3',
-  f4: 'F4',
-  f5: 'F5',
-  f6: 'F6',
-  f7: 'F7',
-  f8: 'F8',
-  f9: 'F9',
-  f10: 'F10',
-  f11: 'F11',
-  f12: 'F12',
-};
+import { KEY_MAPPINGS } from './key-map';
+import { shortcuts } from './shortcuts';
 
 /**
  * BrowserOperator class that extends the base Operator
@@ -60,6 +40,8 @@ export class BrowserOperator extends Operator {
   private highlightClickableElements = true;
 
   private showActionInfo = true;
+
+  private deviceScaleFactor?: number;
 
   /**
    * Creates a new BrowserOperator instance
@@ -120,13 +102,9 @@ export class BrowserOperator extends Operator {
     const page = await this.getActivePage();
 
     try {
-      // Get viewport info
-      this.logger.info('Getting viewport info...');
-      const viewport = page.viewport();
-      if (!viewport) {
-        throw new Error(`Missing viewport`);
-      }
-      this.logger.info(`Viewport: ${JSON.stringify(viewport)}`);
+      // Get deviceScaleFactor
+      const deviceScaleFactor = await this.getDeviceScaleFactor();
+      this.logger.info('DeviceScaleFactor:', deviceScaleFactor);
 
       // Highlight clickable elements before taking screenshot if enabled
       if (this.highlightClickableElements) {
@@ -143,7 +121,11 @@ export class BrowserOperator extends Operator {
       // Take screenshot
       await this.uiHelper.cleanupTemporaryVisuals();
       const buffer = await page.screenshot({
+        // https://github.com/puppeteer/puppeteer/issues/7043
+        captureBeyondViewport: false,
         encoding: 'base64',
+        type: 'jpeg',
+        quality: 75,
         fullPage: false, // Capture only the visible area
       });
 
@@ -157,7 +139,7 @@ export class BrowserOperator extends Operator {
 
       const output: ScreenshotOutput = {
         base64: buffer.toString(),
-        scaleFactor: viewport.deviceScaleFactor || 1,
+        scaleFactor: deviceScaleFactor || 1,
       };
 
       this.logger.info('Screenshot Info', {
@@ -202,13 +184,14 @@ export class BrowserOperator extends Operator {
     const { action_type, action_inputs } = parsedPrediction;
     const startBoxStr = action_inputs?.start_box || '';
 
+    const deviceScaleFactor = await this.getDeviceScaleFactor();
     const coords = parseBoxToScreenCoords({
       boxStr: startBoxStr,
       screenWidth,
       screenHeight,
     });
-
-    const { x: startX, y: startY } = coords;
+    const startX = coords.x ? coords.x / deviceScaleFactor : null;
+    const startY = coords.y ? coords.y / deviceScaleFactor : null;
 
     this.logger.info(`Parsed coordinates: (${startX}, ${startY})`);
     this.logger.info(`Executing action: ${action_type}`);
@@ -367,11 +350,7 @@ export class BrowserOperator extends Operator {
     const stripContent = content.replace(/\\n$/, '').replace(/\n$/, '');
 
     // Type each character with a faster random delay
-    for (const char of stripContent) {
-      await page.keyboard.type(char);
-      // Random delay between 20ms and 50ms for natural typing rhythm
-      await this.delay(20 + Math.random() * 30);
-    }
+    await page.keyboard.type(stripContent, { delay: 20 + Math.random() * 30 });
 
     if (content.endsWith('\n') || content.endsWith('\\n')) {
       // Reduced pause before Enter
@@ -392,26 +371,26 @@ export class BrowserOperator extends Operator {
     const keyStr = inputs?.key || inputs?.hotkey;
     if (!keyStr) {
       this.logger.warn('No hotkey specified');
-      return;
+      throw new Error(`No hotkey specified`);
     }
 
     this.logger.info(`Executing hotkey: ${keyStr}`);
-    const normalizeKey = (key: string): string => {
-      const lowercaseKey = key.toLowerCase();
-      return KEY_MAPPINGS[lowercaseKey] || key;
-    };
 
     const keys = keyStr.split(/[\s+]/);
-    const normalizedKeys = keys.map(normalizeKey);
+    const normalizedKeys: KeyInput[] = keys.map((key: string) => {
+      const lowercaseKey = key.toLowerCase();
+      const keyInput = KEY_MAPPINGS[lowercaseKey];
+
+      if (keyInput) {
+        return keyInput;
+      }
+
+      throw new Error(`Unsupported key: ${key}`);
+    });
+
     this.logger.info(`Normalized keys:`, normalizedKeys);
 
-    for (const key of normalizedKeys) {
-      await page.keyboard.down(key);
-    }
-    await this.delay(100);
-    for (const key of normalizedKeys.reverse()) {
-      await page.keyboard.up(key);
-    }
+    await shortcuts(page, normalizedKeys, this.options.browserType);
 
     // For hotkey combinations that may trigger navigation,
     // wait for navigation to complete
@@ -485,6 +464,29 @@ export class BrowserOperator extends Operator {
     this.logger.info('Navigation completed or timed out');
   }
 
+  private async getDeviceScaleFactor() {
+    if (this.deviceScaleFactor) {
+      return this.deviceScaleFactor;
+    }
+
+    this.logger.info('Getting deviceScaleFactor info...');
+    const page = await this.getActivePage();
+
+    const scaleFactor = page.viewport()?.deviceScaleFactor;
+    if (scaleFactor) {
+      this.deviceScaleFactor = scaleFactor;
+      return scaleFactor;
+    }
+
+    const devicePixelRatio = await page.evaluate(() => window.devicePixelRatio);
+    if (devicePixelRatio) {
+      this.deviceScaleFactor = devicePixelRatio;
+      return devicePixelRatio;
+    }
+
+    throw Error('Get deviceScaleFactor failed.');
+  }
+
   public async cleanup(): Promise<void> {
     this.logger.info('Starting cleanup...');
     await this.uiHelper.cleanup();
@@ -500,6 +502,8 @@ export class BrowserOperator extends Operator {
 export class DefaultBrowserOperator extends BrowserOperator {
   private static instance: DefaultBrowserOperator | null = null;
   private static browser: LocalBrowser | null = null;
+  private static browserPath: string;
+  private static browserType: BrowserType;
   private static logger: Logger | null = null;
 
   private constructor(options: BrowserOperatorOptions) {
@@ -510,10 +514,21 @@ export class DefaultBrowserOperator extends BrowserOperator {
    * Check whether the local environment has a browser available
    * @returns {boolean}
    */
-  public static hasBrowser(): boolean {
+  public static hasBrowser(browser?: BrowserType): boolean {
     try {
-      const browserFinder = new BrowserFinder();
-      browserFinder.findBrowser();
+      if (this.browserPath) {
+        return true;
+      }
+
+      if (!this.logger) {
+        this.logger = new ConsoleLogger('[DefaultBrowserOperator]');
+      }
+
+      const browserFinder = new BrowserFinder(this.logger);
+      const browserData = browserFinder.findBrowser(browser);
+      this.browserPath = browserData.path;
+      this.browserType = browserData.type;
+
       return true;
     } catch (error) {
       if (this.logger) {
@@ -527,19 +542,32 @@ export class DefaultBrowserOperator extends BrowserOperator {
     highlight = false,
     showActionInfo = false,
     isCallUser = false,
+    searchEngine = 'google' as SearchEngine,
   ): Promise<DefaultBrowserOperator> {
+    if (!this.logger) {
+      this.logger = new ConsoleLogger('[DefaultBrowserOperator]');
+    }
+
+    if (this.browser) {
+      const isAlive = await this.browser.isBrowserAlive();
+      if (!isAlive) {
+        this.browser = null;
+        this.instance = null;
+      }
+    }
+
+    if (!this.browser) {
+      this.browser = new LocalBrowser({ logger: this.logger });
+      await this.browser.launch({
+        executablePath: this.browserPath,
+        browserType: this.browserType,
+      });
+    }
+
     if (!this.instance) {
-      if (!this.logger) {
-        this.logger = new ConsoleLogger('[Default]');
-      }
-
-      if (!this.browser) {
-        this.browser = new LocalBrowser({ logger: this.logger });
-        await this.browser.launch();
-      }
-
       this.instance = new DefaultBrowserOperator({
         browser: this.browser,
+        browserType: this.browserType,
         logger: this.logger,
         highlightClickableElements: highlight,
         showActionInfo: showActionInfo,
@@ -548,7 +576,13 @@ export class DefaultBrowserOperator extends BrowserOperator {
 
     if (!isCallUser) {
       const openingPage = await this.browser?.createPage();
-      await openingPage?.goto('https://www.google.com/', {
+      const searchEngineUrls = {
+        [SearchEngine.GOOGLE]: 'https://www.google.com/',
+        [SearchEngine.BING]: 'https://www.bing.com/',
+        [SearchEngine.BAIDU]: 'https://www.baidu.com/',
+      };
+      const targetUrl = searchEngineUrls[searchEngine];
+      await openingPage?.goto(targetUrl, {
         waitUntil: 'networkidle2',
       });
     }
