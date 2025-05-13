@@ -32,6 +32,7 @@ import { IMAGE_PLACEHOLDER } from '@ui-tars/shared/constants';
 // import { useScreenRecord } from '@renderer/hooks/useScreenRecord';
 import { useSession } from '@renderer/hooks/useSession';
 import dayjs from 'dayjs';
+import { useUTIO } from '@renderer/hooks/useUTIO';
 
 const SHARE_TIMEOUT = 100000;
 
@@ -127,7 +128,8 @@ export function ShareOptions() {
               .filter((m) => m.screenshotBase64)
               .pop()?.screenshotBase64;
 
-            await window.electron.utio.shareReport({
+            const utio = useUTIO();
+            await utio.send({
               type: 'shareReport',
               instruction: lastHumanMessage,
               lastScreenshot,

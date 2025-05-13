@@ -1,6 +1,7 @@
 {
   "extends": ["@electron-toolkit/tsconfig/tsconfig.node.json", "./tsconfig.base.json"],
   "include": [
+    "src/renderer/src/typings/*.d.ts",
     "electron.vite.config.*",
     "vitest.config.*",
     "forge.config.ts",

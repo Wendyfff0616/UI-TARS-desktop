@@ -15,8 +15,8 @@ import { api } from '@renderer/api';
 import ChatInput from '@renderer/components/ChatInput';
 
 import { SidebarTrigger } from '@renderer/components/ui/sidebar';
-import { ShareOptions } from '@/renderer/src/components/RunMessages/ShareOptions';
-import { ClearHistory } from '@/renderer/src/components/RunMessages/ClearHistory';
+import { ShareOptions } from '@renderer/components/RunMessages/ShareOptions';
+import { ClearHistory } from '@renderer/components/RunMessages/ClearHistory';
 import { useStore } from '@renderer/hooks/useStore';
 import { useSession } from '@renderer/hooks/useSession';
 
@@ -79,6 +79,7 @@ const RunMessages = () => {
 
   const handleSelect = async (suggestion: string) => {
     await api.setInstructions({ instructions: suggestion });
+    console.log('>> calling setInstructions with:', suggestion);
   };
 
   const handleImageSelect = async (index: number) => {

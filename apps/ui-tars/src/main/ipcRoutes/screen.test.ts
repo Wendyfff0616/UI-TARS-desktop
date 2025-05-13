@@ -28,7 +28,7 @@ describe('screenRoute.getScreenSize', () => {
     (getScreenSize as any).mockReturnValue(mockScreenData);
 
     const result = await screenRoute.getScreenSize.handle({
-      input: {},
+      input: { sessionId: '123' },
       context: {} as any,
     });
 
@@ -52,7 +52,7 @@ describe('screenRoute.getScreenSize', () => {
     (getScreenSize as any).mockReturnValue(mockScreenData);
 
     const result = await screenRoute.getScreenSize.handle({
-      input: {},
+      input: { sessionId: '123' },
       context: {} as any,
     });
 
@@ -70,7 +70,7 @@ describe('screenRoute.getScreenSize', () => {
 
     await expect(
       screenRoute.getScreenSize.handle({
-        input: {},
+        input: { sessionId: '123' },
         context: {} as any,
       }),
     ).rejects.toThrow('Failed to get screen information');

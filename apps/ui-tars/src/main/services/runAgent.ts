@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 import assert from 'assert';
-
+import { store } from '@main/store/create';
 import { logger } from '@main/logger';
 import { hideWindowBlock } from '@main/window/index';
 import { StatusEnum, UITarsModelVersion } from '@ui-tars/shared/types';
@@ -49,6 +49,7 @@ export const runAgent = async (
   logger.info('runAgent');
   const settings = SettingStore.getStore();
   const { instructions, abortController } = getState();
+  console.log('[runAgent] instructions from store:', getState().instructions);
   assert(instructions, 'instructions is required');
 
   const language = settings.language ?? 'en';
@@ -58,6 +59,7 @@ export const runAgent = async (
     showScreenWaterFlow();
   }
 
+  // 1) 数据回调，把每一步的消息推到前端
   const handleData: GUIAgentConfig<NutJSElectronOperator>['onData'] = async ({
     data,
   }) => {
@@ -65,7 +67,7 @@ export const runAgent = async (
     const { status, conversations, ...restUserData } = data;
     logger.info('[status]', status, conversations.length);
 
-    // add SoM to conversations
+    // 在截图上标记 SoM
     const conversationsWithSoM: ConversationWithSoM[] = await Promise.all(
       conversations.map(async (conv) => {
         const { screenshotContext, predictionParsed } = conv;
@@ -127,6 +129,7 @@ export const runAgent = async (
     });
   };
 
+  // 2) 选 operator
   const lastStatus = getState().status;
 
   let operator: NutJSElectronOperator | DefaultBrowserOperator;
@@ -151,11 +154,29 @@ export const runAgent = async (
     );
   }
 
+  // 3) 定义一个自动带 X-Session-ID 的 fetch
+  const fetchWithSession = async (
+    input: RequestInfo,
+    init: RequestInit = {},
+  ): Promise<Response> => {
+    const sid = store.getState().sessionId;
+    const headers = {
+      ...(init.headers as Record<string, string>),
+      ...(sid ? { 'X-Session-ID': sid } : {}),
+    };
+    const res = await fetch(input, { ...init, headers });
+    const newSid = res.headers.get('X-Session-ID');
+    if (newSid) store.setState({ sessionId: newSid });
+    return res;
+  };
+
+  // 4) 用这个 fetchWithSession 初始化 GUIAgent
   const guiAgent = new GUIAgent({
     model: {
       baseURL: settings.vlmBaseUrl,
       apiKey: settings.vlmApiKey,
       model: settings.vlmModelName,
+      fetch: fetchWithSession,
     },
     systemPrompt:
       getModelVersion(settings.vlmProvider) === UITarsModelVersion.V1_5
@@ -163,21 +184,15 @@ export const runAgent = async (
         : getSystemPrompt(language),
     logger,
     signal: abortController?.signal,
-    operator: operator,
+    operator,
     onData: handleData,
     onError: ({ error }) => {
       logger.error('[runAgent error]', settings, error);
     },
     retry: {
-      model: {
-        maxRetries: 3,
-      },
-      screenshot: {
-        maxRetries: 5,
-      },
-      execute: {
-        maxRetries: 1,
-      },
+      model: { maxRetries: 3 },
+      screenshot: { maxRetries: 5 },
+      execute: { maxRetries: 1 },
     },
     maxLoopCount: settings.maxLoopCount,
     loopIntervalInMs: settings.loopIntervalInMs,
@@ -186,6 +201,7 @@ export const runAgent = async (
 
   GUIAgentManager.getInstance().setAgent(guiAgent);
 
+  // 5) 发送指令给后端
   await hideWindowBlock(async () => {
     await UTIOService.getInstance().sendInstruction(instructions);
 

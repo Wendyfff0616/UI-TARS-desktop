@@ -134,6 +134,7 @@ export default function ChatFeed({ initialMessage, onClose }: ChatFeedProps) {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
+              'X-Session-ID': sessionData.sessionId,
               Accept: 'text/event-stream',
               'Cache-Control': 'no-cache',
               Connection: 'keep-alive',

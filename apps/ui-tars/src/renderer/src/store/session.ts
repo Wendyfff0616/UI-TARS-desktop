@@ -7,8 +7,8 @@ import {
   type SessionMetaInfo,
 } from '@renderer/db/session';
 import { chatManager } from '@renderer/db/chat';
-import { api } from '@/renderer/src/api';
-import type { ConversationWithSoM } from '@/main/shared/types';
+import { api } from '@renderer/api';
+import type { ConversationWithSoM } from '@main/shared/types';
 
 // 本地存储服务器会话ID
 const serverSessionStore = localforage.createInstance({

@@ -16,7 +16,7 @@ export function useSetting() {
     };
 
     settingRpc.onUpdate((newState) => {
-      setSettings(newState);
+      setSettings(newState as Partial<LocalStore>);
     });
 
     initSetting();
